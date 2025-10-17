@@ -1,7 +1,8 @@
-# data_processor.py
+# data_processor.py (VERSÃO CORRIGIDA)
 
 import pandas as pd
 import plotly.express as px
+from datetime import datetime # <--- ESSA LINHA RESOLVE O NAMERROR
 
 def calculate_performance_metrics(df_apostas: pd.DataFrame):
     """
@@ -47,6 +48,7 @@ def create_profit_chart(df_apostas: pd.DataFrame):
     Cria um gráfico de linha da evolução do lucro.
     """
     if df_apostas.empty or 'Data_Registro' not in df_apostas.columns:
+        # Garante que, se for vazio, crie um DataFrame com a data importada
         df_apostas = pd.DataFrame({'Data_Registro': [datetime.now()], 'Lucro_Acumulado': [0.0]})
     else:
         # Garantir tipagem e coluna Lucro
