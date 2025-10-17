@@ -1,4 +1,4 @@
-# main.py (VERSÃO FINAL 1.5.1 - CORREÇÃO DO CÁLCULO DE LUCRO)
+# main.py (VERSÃO FINAL 1.5.2 - CÁLCULO AUTOMÁTICO DE RETORNO)
 
 import streamlit as st
 import pandas as pd
@@ -297,11 +297,33 @@ with tab_apostas:
             with col_res2:
                 novo_status = st.selectbox("Status Final", ['GREEN', 'RED', 'CASHOUT'], key='res_status')
                 
+            # --- LÓGICA DE PRÉ-PREENCHIMENTO DO VALOR DE RETORNO ---
+            default_return_value = 0.00
+            if aposta_selecionada is not None:
+                stake = aposta_selecionada['Valor_Apostado']
+                odd = aposta_selecionada['Odd']
+
+                if st.session_state['res_status'] == 'GREEN':
+                    # Padrão para GREEN é o retorno total esperado (Stake * Odd)
+                    default_return_value = stake * odd
+                elif st.session_state['res_status'] == 'RED':
+                    # Padrão para RED é 0 de retorno
+                    default_return_value = 0.00
+                else: 
+                    # Padrão para CASHOUT é a Stake (ponto de equilíbrio), mas deve ser editado pelo usuário
+                    default_return_value = stake 
+            # --- FIM DA LÓGICA DE PRÉ-PREENCHIMENTO ---
+
             with col_res3:
-                default_return = aposta_selecionada['Valor_Apostado'] if aposta_selecionada is not None else 0.00
-                
-                # AQUI ESTÁ A CORREÇÃO NO RÓTULO
-                valor_retorno = st.number_input("Valor TOTAL Recebido (R$, Incluindo Stake)", min_value=0.00, value=default_return, step=1.00, format="%.2f", key='res_retorno')
+                # O campo usa o valor pré-preenchido, mas permite edição.
+                valor_retorno = st.number_input(
+                    "Valor TOTAL Recebido (R$, Incluindo Stake)", 
+                    min_value=0.00, 
+                    value=default_return_value, 
+                    step=1.00, 
+                    format="%.2f", 
+                    key='res_retorno'
+                )
 
             if st.button("✅ Atualizar Resultado e Saldo", use_container_width=True, key='btn_resolver') and aposta_selecionada is not None:
                 valor_apostado = aposta_selecionada['Valor_Apostado']
@@ -309,10 +331,11 @@ with tab_apostas:
                 
                 # Lógica para Lucro/Prejuízo:
                 if novo_status == 'RED':
+                    # Força o retorno a 0.00 e o lucro a -Stake para o status RED
                     valor_retorno_final = 0.00
                     lucro = -valor_apostado 
                 else:
-                    # GREEN ou CASHOUT
+                    # GREEN ou CASHOUT. Usa o valor do campo (pré-preenchido ou editado)
                     valor_retorno_final = valor_retorno
                     # Lucro = Retorno Total - Stake
                     lucro = valor_retorno - valor_apostado
