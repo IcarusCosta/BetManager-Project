@@ -148,44 +148,63 @@ with tab_jogos:
             st.dataframe(df_display, use_container_width=True, height=400, hide_index=True)
             st.caption(f"Total de {len(df_final)} eventos exibidos.")
 
-with tab_apostas:
-    st.header("📝 Registro Manual de Aposta")
-    
-    col_reg1, col_reg2, col_reg3 = st.columns(3)
-    
-    with col_reg1:
-        reg_casa = st.selectbox("Casa de Aposta", ['Sportingbet', 'Superbet'], key='reg_casa')
-        reg_mercado = st.text_input("Mercado (Ex: Acima de 2.5 gols)", key='reg_mercado')
-    
-    with col_reg2:
-        reg_liga = st.text_input("Liga/Campeonato", key='reg_liga')
-        reg_odd = st.number_input("Odd", min_value=1.01, step=0.01, format="%.2f", key='reg_odd')
+st.markdown("---")
+    st.subheader("🛠️ Resolver Aposta Pendente")
 
-    with col_reg3:
-        reg_jogo = st.text_input("Evento/Jogo", key='reg_jogo')
-        reg_valor = st.number_input("Valor Apostado (Stake R$)", min_value=0.01, step=5.00, format="%.2f", key='reg_valor')
-
-    saldo_disp = st.session_state['saldos'].get(reg_casa, 0.00)
-    st.markdown(f"**Saldo Disponível em {reg_casa}: R$ {saldo_disp:.2f}**")
+    # Filtra apenas apostas que ainda não foram resolvidas
+    df_pendentes = st.session_state['apostas_data'][st.session_state['apostas_data']['Status'] == 'AGUARDANDO']
     
-    if st.button("✅ Registrar Aposta e Deduzir Saldo", use_container_width=True):
-        if reg_valor > 0 and reg_valor <= saldo_disp:
+    if df_pendentes.empty:
+        st.info("Nenhuma aposta pendente para resolver.")
+    else:
+        # Puxa os IDs das apostas pendentes
+        opcoes_id = df_pendentes['ID_Aposta'].tolist()
+        
+        col_res1, col_res2, col_res3 = st.columns(3)
+
+        with col_res1:
+            id_selecionado = st.selectbox("Selecione o ID da Aposta", opcoes_id, key='res_id')
             
-            aposta_id = insert_aposta(reg_casa, reg_liga, reg_jogo, reg_mercado, reg_odd, reg_valor)
+            # Puxa os detalhes da aposta selecionada
+            aposta_selecionada = df_pendentes[df_pendentes['ID_Aposta'] == id_selecionado].iloc[0]
+            st.caption(f"Jogo: {aposta_selecionada['Jogo']}")
+            st.caption(f"Stake: R$ {aposta_selecionada['Valor_Apostado']:.2f}")
+
+        with col_res2:
+            novo_status = st.selectbox("Status Final", ['GREEN', 'RED', 'CASHOUT'], key='res_status')
             
-            if aposta_id:
-                # 1. Deduz o valor do saldo e salva o novo saldo no DB
-                novo_saldo = saldo_disp - reg_valor
-                update_saldo(reg_casa, novo_saldo)
-                
-                # 2. Atualiza a lista de apostas e a sidebar
-                refresh_data()
-                
-                st.success(f"Aposta ID {aposta_id} registrada! R$ {reg_valor:.2f} deduzidos do saldo da {reg_casa}.")
+        with col_res3:
+            # Pede o valor que retornou (usado para Green ou Cashout)
+            valor_retorno = st.number_input("Valor Recebido (R$)", min_value=0.00, value=aposta_selecionada['Valor_Apostado'], step=1.00, format="%.2f", key='res_retorno')
+
+        if st.button("✅ Atualizar Resultado e Saldo", use_container_width=True):
+            valor_apostado = aposta_selecionada['Valor_Apostado']
+            casa_aposta = aposta_selecionada['Casa']
+            
+            # Lógica para Lucro/Prejuízo:
+            if novo_status == 'RED':
+                # Em caso de RED, o retorno é 0, o lucro/prejuízo já é -Valor_Apostado
+                valor_retorno_final = 0.00
+                lucro = -valor_apostado 
             else:
-                st.error("Falha ao registrar a aposta no banco de dados.")
-        else:
-            st.error("Valor inválido! Certifique-se de que o valor é maior que zero e menor ou igual ao saldo disponível.")
+                # Caso GREEN ou CASHOUT, usamos o valor inserido
+                valor_retorno_final = valor_retorno
+                lucro = valor_retorno - valor_apostado
+
+            # 1. Atualiza o status e o retorno no DB
+            update_aposta_resultado(id_selecionado, novo_status, valor_retorno_final)
+
+            # 2. Atualiza o saldo: o saldo final recebe o retorno total da aposta
+            saldo_atual = st.session_state['saldos'].get(casa_aposta, 0.00)
+            novo_saldo_final = saldo_atual + valor_retorno_final 
+            
+            # Nota: O valor apostado já foi deduzido no registro. Adicionamos apenas o que voltou.
+
+            update_saldo(casa_aposta, novo_saldo_final)
+            
+            refresh_data() 
+            st.success(f"Aposta ID {id_selecionado} resolvida como {novo_status}! Lucro: R$ {lucro:.2f}.")
+
 
     st.markdown("---")
     st.subheader("Histórico de Apostas Registradas")
@@ -219,4 +238,5 @@ with tab_performance:
         
         # Gerar o gráfico
         fig = create_profit_chart(df_apostas)
+
         st.plotly_chart(fig, use_container_width=True)
