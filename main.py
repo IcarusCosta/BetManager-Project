@@ -1,4 +1,4 @@
-# main.py (VERSÃO FINAL 1.5 - COM CORREÇÃO DA SELEÇÃO DE LINHA)
+# main.py (VERSÃO FINAL 1.5.1 - CORREÇÃO DO CÁLCULO DE LUCRO)
 
 import streamlit as st
 import pandas as pd
@@ -299,7 +299,9 @@ with tab_apostas:
                 
             with col_res3:
                 default_return = aposta_selecionada['Valor_Apostado'] if aposta_selecionada is not None else 0.00
-                valor_retorno = st.number_input("Valor Recebido (R$)", min_value=0.00, value=default_return, step=1.00, format="%.2f", key='res_retorno')
+                
+                # AQUI ESTÁ A CORREÇÃO NO RÓTULO
+                valor_retorno = st.number_input("Valor TOTAL Recebido (R$, Incluindo Stake)", min_value=0.00, value=default_return, step=1.00, format="%.2f", key='res_retorno')
 
             if st.button("✅ Atualizar Resultado e Saldo", use_container_width=True, key='btn_resolver') and aposta_selecionada is not None:
                 valor_apostado = aposta_selecionada['Valor_Apostado']
@@ -310,7 +312,9 @@ with tab_apostas:
                     valor_retorno_final = 0.00
                     lucro = -valor_apostado 
                 else:
+                    # GREEN ou CASHOUT
                     valor_retorno_final = valor_retorno
+                    # Lucro = Retorno Total - Stake
                     lucro = valor_retorno - valor_apostado
 
                 # 1. Atualiza o status e o retorno no DB
