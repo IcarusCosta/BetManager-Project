@@ -1,4 +1,4 @@
-# main.py (VERSÃO FINAL 1.6.1 - CORRIGINDO O TYPERROR)
+# main.py (VERSÃO FINAL 1.6.2 - CORRIGINDO O TYPERROR FINAL)
 
 import streamlit as st
 import pandas as pd
@@ -203,15 +203,15 @@ with tab_jogos:
                 if st.button(f"✅ Registrar Aposta de R$ {valor_rapido:.2f}", key='btn_rapida'):
                     if valor_rapido > 0 and valor_rapido <= saldo_disp and rap_prognostico:
                         
-                        # CORREÇÃO AQUI: Garantindo que todos os 7 argumentos sejam passados na ordem correta.
+                        # CHAMADA CORRETA PARA INSERIR APOSTA RÁPIDA
                         aposta_id = insert_aposta(
                             row['Casa'], 
                             row['Liga'], 
                             row['Jogo'], 
                             st.session_state['rap_mercado'],
-                            rap_prognostico,  # <-- Prognostico (5º arg)
-                            st.session_state['rap_odd'], # <-- Odd (6º arg)
-                            valor_rapido # <-- Valor (7º arg)
+                            rap_prognostico,  # 5º Prognostico
+                            st.session_state['rap_odd'], # 6º Odd
+                            valor_rapido # 7º Valor
                         )
                         
                         if aposta_id:
@@ -254,15 +254,15 @@ with tab_apostas:
     if st.button("✅ Registrar Aposta e Deduzir Saldo", use_container_width=True, key='btn_manual'):
         if reg_valor > 0 and reg_valor <= saldo_disp and reg_prognostico:
             
-            # CORREÇÃO AQUI: Garantindo que todos os 7 argumentos sejam passados na ordem correta.
+            # CHAMADA CORRETA PARA INSERIR APOSTA MANUAL
             aposta_id = insert_aposta(
                 reg_casa, 
                 reg_liga, 
                 reg_jogo, 
                 reg_mercado, 
-                reg_prognostico, # <-- Prognostico (5º arg)
-                reg_odd, # <-- Odd (6º arg)
-                reg_valor # <-- Valor (7º arg)
+                reg_prognostico, # 5º Prognostico
+                reg_odd, # 6º Odd
+                reg_valor # 7º Valor
             )
             
             if aposta_id:
