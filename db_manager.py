@@ -1,4 +1,4 @@
-# db_manager.py (VERSÃO FINAL 1.2 - CORREÇÃO DE COLUNAS)
+# db_manager.py (VERSÃO FINAL 1.3 - CORREÇÃO DE KEYERROR)
 
 import sqlite3
 from datetime import datetime
@@ -24,7 +24,8 @@ def setup_database():
         )
     """)
 
-    # Tabela apostas (Importante: Garante as colunas Status e Valor_Retorno)
+    # Tabela apostas
+    # Garante as colunas que o Pandas espera
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS apostas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -84,28 +85,33 @@ def insert_aposta(casa: str, liga: str, jogo: str, mercado: str, odd: float, val
     return aposta_id
 
 def get_all_apostas() -> pd.DataFrame:
-    """Puxa todas as apostas e retorna como um DataFrame do Pandas."""
+    """Puxa todas as apostas e retorna como um DataFrame do Pandas, garantindo o nome das colunas."""
     conn = sqlite3.connect(DATABASE_NAME)
     
-    # O SQL puxa todas as colunas
-    df = pd.read_sql_query("SELECT id AS ID_Aposta, * FROM apostas ORDER BY data_registro DESC", conn)
+    # Puxa todas as colunas
+    df = pd.read_sql_query("SELECT id, casa, liga, jogo, mercado, odd, valor_apostado, valor_retorno, status, data_registro FROM apostas ORDER BY data_registro DESC", conn)
     
     conn.close()
     
-    # Formatação de colunas
+    # Se o DataFrame não estiver vazio, renomeamos as colunas com a capitalização correta
     if not df.empty:
-        df['Data_Registro'] = pd.to_datetime(df['data_registro'])
         df = df.rename(columns={
-            'valor_apostado': 'Valor_Apostado',
-            'valor_retorno': 'Valor_Retorno',
-            'status': 'Status',
+            'id': 'ID_Aposta',
             'casa': 'Casa',
             'liga': 'Liga',
             'jogo': 'Jogo',
             'mercado': 'Mercado',
-            'odd': 'Odd'
+            'odd': 'Odd',
+            'valor_apostado': 'Valor_Apostado',
+            'valor_retorno': 'Valor_Retorno',
+            'status': 'Status',  # <--- CORREÇÃO AQUI! O Pandas está lendo 'status' minúsculo
+            'data_registro': 'Data_Registro'
         })
-        # Seleciona e reordena as colunas para exibição
+        
+        # Garante a tipagem correta para Data_Registro
+        df['Data_Registro'] = pd.to_datetime(df['Data_Registro'])
+        
+        # Reordena as colunas para exibição
         df = df[['ID_Aposta', 'Casa', 'Liga', 'Jogo', 'Mercado', 'Odd', 'Valor_Apostado', 'Valor_Retorno', 'Status', 'Data_Registro']]
         
     return df
