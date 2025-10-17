@@ -1,4 +1,4 @@
-# main.py (VERSÃO FINAL 1.3 - COM RESOLUÇÃO MANUAL E APOSTA RÁPIDA)
+# main.py (VERSÃO FINAL 1.4 - COM CORREÇÃO FINAL DE KEYERROR)
 
 import streamlit as st
 import pandas as pd
@@ -42,6 +42,7 @@ if 'apostas_data' not in st.session_state:
     try:
         st.session_state['apostas_data'] = get_all_apostas()
     except Exception:
+        # Garante que seja um DataFrame vazio se houver erro
         st.session_state['apostas_data'] = pd.DataFrame()
 # ----------------------------
 
@@ -154,15 +155,13 @@ with tab_jogos:
             st.subheader(f"Selecione um evento para Aposta Rápida:")
             
             # --- CAPTURA DA SELEÇÃO (Aposta Rápida) ---
-            # Usamos st.data_editor com seleção de linha única
             selected_rows = st.data_editor(
                 df_display, 
                 use_container_width=True, 
                 hide_index=True,
                 column_config={"ID": st.column_config.Column(disabled=True, width="small")},
                 num_rows="dynamic",
-                disabled=df_display.columns.tolist(), # Desabilita edição de célula
-                # O Streamlit Cloud 1.35 usa 'selection' para seleção de linha
+                disabled=df_display.columns.tolist(),
                 key='tabela_odds'
             )
 
@@ -173,7 +172,6 @@ with tab_jogos:
                 st.markdown("---")
                 st.markdown("### ⚡ Aposta Rápida (Evento Selecionado)")
                 
-                # Assume a primeira (e única) linha selecionada
                 row = selected_rows.iloc[0]
 
                 col_rapida1, col_rapida2, col_rapida3 = st.columns(3)
@@ -181,7 +179,6 @@ with tab_jogos:
                 with col_rapida1:
                     st.text_input("Casa", value=row['Casa'], disabled=True, key='rap_casa_disp')
                     
-                    # Usa selectbox para mercados (Melhoria 3.2)
                     st.selectbox("Mercado", 
                         ['Vencedor da Partida (1X2)', 'Acima de 2.5 Gols', 'Ambas Marcam', 'Handicap Asiático'], 
                         key='rap_mercado'
@@ -189,7 +186,7 @@ with tab_jogos:
                     
                 with col_rapida2:
                     st.text_input("Jogo", value=row['Jogo'], disabled=True, key='rap_jogo_disp')
-                    odd_selecionada = st.number_input("Odd", min_value=1.01, step=0.01, format="%.2f", value=row['Odd_1'], key='rap_odd') # Odd 1 como default
+                    odd_selecionada = st.number_input("Odd", min_value=1.01, step=0.01, format="%.2f", value=row['Odd_1'], key='rap_odd')
                     
                 with col_rapida3:
                     valor_rapido = st.number_input("Valor Apostado (R$)", min_value=0.01, step=5.00, format="%.2f", key='rap_valor')
@@ -226,7 +223,6 @@ with tab_apostas:
     with col_reg1:
         reg_casa = st.selectbox("Casa de Aposta", ['Sportingbet', 'Superbet'], key='reg_casa')
         
-        # Usa selectbox para mercados (Melhoria 3.2)
         reg_mercado = st.selectbox("Mercado", 
             ['Vencedor da Partida (1X2)', 'Acima de 2.5 Gols', 'Ambas Marcam', 'Handicap Asiático', 'Outro'], 
             key='reg_mercado'
@@ -265,69 +261,77 @@ with tab_apostas:
     st.markdown("---")
     st.subheader("🛠️ Resolver Aposta Pendente")
 
-    # Filtra apenas apostas que ainda não foram resolvidas
-    df_pendentes = st.session_state['apostas_data'][st.session_state['apostas_data']['Status'] == 'AGUARDANDO']
+    # --- CORREÇÃO DE SEGURANÇA CONTRA KEYERROR APLICADA AQUI ---
+    df_apostas = st.session_state.get('apostas_data', pd.DataFrame())
     
-    if df_pendentes.empty:
-        st.info("Nenhuma aposta pendente para resolver.")
+    if df_apostas.empty or 'Status' not in df_apostas.columns:
+        df_pendentes = pd.DataFrame()
+        st.info("Nenhuma aposta registrada. Registre uma aposta primeiro.")
     else:
-        # Puxa os IDs das apostas pendentes
-        opcoes_id = df_pendentes['ID_Aposta'].tolist()
+        # O filtro agora só é tentado se a coluna 'Status' existir
+        df_pendentes = df_apostas[df_apostas['Status'] == 'AGUARDANDO']
         
-        col_res1, col_res2, col_res3 = st.columns(3)
-
-        with col_res1:
-            id_selecionado = st.selectbox("Selecione o ID da Aposta", opcoes_id, key='res_id')
+        if df_pendentes.empty:
+            st.info("Nenhuma aposta pendente para resolver.")
+        else:
+            # Puxa os IDs das apostas pendentes
+            opcoes_id = df_pendentes['ID_Aposta'].tolist()
             
-            # Puxa os detalhes da aposta selecionada (Garantia de que a linha existe)
-            if not df_pendentes[df_pendentes['ID_Aposta'] == id_selecionado].empty:
-                aposta_selecionada = df_pendentes[df_pendentes['ID_Aposta'] == id_selecionado].iloc[0]
-                st.caption(f"Jogo: {aposta_selecionada['Jogo']}")
-                st.caption(f"Stake: R$ {aposta_selecionada['Valor_Apostado']:.2f}")
-            else:
-                aposta_selecionada = None
+            col_res1, col_res2, col_res3 = st.columns(3)
 
-        with col_res2:
-            novo_status = st.selectbox("Status Final", ['GREEN', 'RED', 'CASHOUT'], key='res_status')
-            
-        with col_res3:
-            # Pede o valor que retornou (usado para Green ou Cashout)
-            default_return = aposta_selecionada['Valor_Apostado'] if aposta_selecionada is not None else 0.00
-            valor_retorno = st.number_input("Valor Recebido (R$)", min_value=0.00, value=default_return, step=1.00, format="%.2f", key='res_retorno')
+            with col_res1:
+                id_selecionado = st.selectbox("Selecione o ID da Aposta", opcoes_id, key='res_id')
+                
+                # Puxa os detalhes da aposta selecionada (Garantia de que a linha existe)
+                aposta_selecionada_df = df_pendentes[df_pendentes['ID_Aposta'] == id_selecionado]
+                if not aposta_selecionada_df.empty:
+                    aposta_selecionada = aposta_selecionada_df.iloc[0]
+                    st.caption(f"Jogo: {aposta_selecionada['Jogo']}")
+                    st.caption(f"Stake: R$ {aposta_selecionada['Valor_Apostado']:.2f}")
+                else:
+                    aposta_selecionada = None
 
-        if st.button("✅ Atualizar Resultado e Saldo", use_container_width=True, key='btn_resolver') and aposta_selecionada is not None:
-            valor_apostado = aposta_selecionada['Valor_Apostado']
-            casa_aposta = aposta_selecionada['Casa']
-            
-            # Lógica para Lucro/Prejuízo:
-            if novo_status == 'RED':
-                valor_retorno_final = 0.00
-                lucro = -valor_apostado 
-            else:
-                valor_retorno_final = valor_retorno
-                lucro = valor_retorno - valor_apostado
+            with col_res2:
+                novo_status = st.selectbox("Status Final", ['GREEN', 'RED', 'CASHOUT'], key='res_status')
+                
+            with col_res3:
+                # Pede o valor que retornou (usado para Green ou Cashout)
+                default_return = aposta_selecionada['Valor_Apostado'] if aposta_selecionada is not None else 0.00
+                valor_retorno = st.number_input("Valor Recebido (R$)", min_value=0.00, value=default_return, step=1.00, format="%.2f", key='res_retorno')
 
-            # 1. Atualiza o status e o retorno no DB
-            update_aposta_resultado(id_selecionado, novo_status, valor_retorno_final)
+            if st.button("✅ Atualizar Resultado e Saldo", use_container_width=True, key='btn_resolver') and aposta_selecionada is not None:
+                valor_apostado = aposta_selecionada['Valor_Apostado']
+                casa_aposta = aposta_selecionada['Casa']
+                
+                # Lógica para Lucro/Prejuízo:
+                if novo_status == 'RED':
+                    valor_retorno_final = 0.00
+                    lucro = -valor_apostado 
+                else:
+                    valor_retorno_final = valor_retorno
+                    lucro = valor_retorno - valor_apostado
 
-            # 2. Atualiza o saldo: adicionamos APENAS o que retornou (o apostado já foi subtraído)
-            saldo_atual = st.session_state['saldos'].get(casa_aposta, 0.00)
-            novo_saldo_final = saldo_atual + valor_retorno_final 
-            
-            update_saldo(casa_aposta, novo_saldo_final)
-            
-            refresh_data() 
-            st.success(f"Aposta ID {id_selecionado} resolvida como {novo_status}! Lucro: R$ {lucro:.2f}.")
+                # 1. Atualiza o status e o retorno no DB
+                update_aposta_resultado(id_selecionado, novo_status, valor_retorno_final)
+
+                # 2. Atualiza o saldo: adicionamos APENAS o que retornou (o apostado já foi subtraído)
+                saldo_atual = st.session_state['saldos'].get(casa_aposta, 0.00)
+                novo_saldo_final = saldo_atual + valor_retorno_final 
+                
+                update_saldo(casa_aposta, novo_saldo_final)
+                
+                refresh_data() 
+                st.success(f"Aposta ID {id_selecionado} resolvida como {novo_status}! Lucro: R$ {lucro:.2f}.")
 
 
     st.markdown("---")
     st.subheader("Histórico de Apostas Registradas")
     
     # Tabela com histórico de apostas
-    if st.session_state['apostas_data'].empty:
+    if df_apostas.empty:
         st.info("Nenhuma aposta registrada ainda.")
     else:
-        st.dataframe(st.session_state['apostas_data'], use_container_width=True)
+        st.dataframe(df_apostas, use_container_width=True)
 
 
 with tab_performance:
@@ -335,7 +339,7 @@ with tab_performance:
     
     df_apostas = st.session_state['apostas_data']
     
-    if df_apostas.empty:
+    if df_apostas.empty or 'Status' not in df_apostas.columns:
         st.info("Registre algumas apostas resolvidas (GREEN/RED) para visualizar o desempenho.")
     else:
         # Calcular métricas de performance
