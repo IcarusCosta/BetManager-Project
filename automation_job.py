@@ -1,65 +1,66 @@
-# automation_job.py
+# automation_job.py (VERSÃO CORRIGIDA - Key Error 'status')
 
-import pandas as pd
-from db_manager import get_all_apostas, update_aposta_resultado, get_latest_saldo, update_saldo
-# A falha acontecia aqui. Garantimos que bet_api.py tem esta função.
-from bet_api import check_event_result_simulated 
+import random
 import time
+import pandas as pd
+from db_manager import get_all_apostas, update_aposta_resultado, update_saldo, get_latest_saldo
 
 def run_result_automation():
-    """
-    Verifica todas as apostas em AGUARDANDO e tenta resolvê-las (simulado).
-    """
-    print("Iniciando rotina de automação de resultados...")
-    
-    # 1. Puxa todas as apostas em aberto
+    # 1. Obter todas as apostas
     df_apostas = get_all_apostas()
-    apostas_abertas = df_apostas[df_apostas['status'] == 'AGUARDANDO']
-    
-    if apostas_abertas.empty:
-        print("Nenhuma aposta pendente para verificar.")
+
+    if df_apostas.empty:
         return 0
 
-    count_updated = 0
-    
+    # 2. Filtrar apenas as apostas 'AGUARDANDO'
+    # CORREÇÃO AQUI: Usando 'Status' (com 'S' maiúsculo)
+    apostas_abertas = df_apostas[df_apostas['Status'] == 'AGUARDANDO'] 
+
+    if apostas_abertas.empty:
+        return 0
+
+    updated_count = 0
+
+    # 3. Simular a verificação de resultados para cada aposta
     for index, aposta in apostas_abertas.iterrows():
-        aposta_id = aposta['id']
-        casa = aposta['casa']
-        valor = aposta['valor']
-        odd = aposta['odd']
-        jogo = aposta['jogo']
         
-        # 2. Verifica o resultado (Simulado usando o ID da aposta)
-        simulated_event_id = str(aposta_id) 
-        
-        novo_status, multiplicador_lucro_liquido = check_event_result_simulated(simulated_event_id)
-        
-        if novo_status != "AGUARDANDO":
-            
-            if novo_status == "GREEN":
-                lucro_liquido = (valor * odd) - valor
-            elif novo_status == "RED":
-                lucro_liquido = -valor
-            elif novo_status == "CASHOUT":
-                lucro_liquido = valor * 0.2 
-            else:
-                lucro_liquido = 0.00 
+        # Simulação de delay para a automação
+        # time.sleep(0.01)
 
-            # 3. Atualiza a aposta no DB
-            update_aposta_resultado(aposta_id, novo_status, lucro_liquido)
-            
-            # 4. Atualiza o saldo
-            saldo_casa_atual = get_latest_saldo(casa)
-            novo_saldo_casa = saldo_casa_atual + lucro_liquido
-            update_saldo(casa, novo_saldo_casa)
-            
-            print(f"-> Aposta {aposta_id} ({jogo}): Resolvida como {novo_status}. Lucro R${lucro_liquido:.2f}")
-            count_updated += 1
+        # 4. Decidir o resultado (GREEN/RED/CASHOUT) de forma simulada
+        resultados_possiveis = ['GREEN', 'RED'] 
         
-        time.sleep(0.1)
+        # A chance de GREEN é proporcional à ODD (quanto menor a ODD, maior a chance simulada de GREEN)
+        # Odds menores que 2.0 têm chance maior de GREEN na simulação
+        odd = aposta['Odd']
+        
+        if odd < 2.0:
+            status_final = random.choices(resultados_possiveis, weights=[0.65, 0.35], k=1)[0]
+        else:
+            status_final = random.choices(resultados_possiveis, weights=[0.45, 0.55], k=1)[0]
+            
+        valor_apostado = aposta['Valor_Apostado']
+        casa_aposta = aposta['Casa']
+        
+        # 5. Calcular Retorno e Lucro
+        if status_final == 'GREEN':
+            # Simula Retorno Total (Stake * Odd)
+            valor_retorno = valor_apostado * odd
+            lucro = valor_retorno - valor_apostado
+        else: # RED
+            valor_retorno = 0.00
+            lucro = -valor_apostado
 
-    print(f"Rotina de automação finalizada. {count_updated} apostas atualizadas.")
-    return count_updated
+        # 6. Atualizar o banco de dados
+        
+        # Aposta
+        update_aposta_resultado(aposta['ID_Aposta'], status_final, valor_retorno)
+        
+        # Saldo
+        saldo_atual = get_latest_saldo(casa_aposta)
+        novo_saldo_final = saldo_atual + valor_retorno
+        update_saldo(casa_aposta, novo_saldo_final)
 
-if __name__ == '__main__':
-    run_result_automation()
+        updated_count += 1
+
+    return updated_count
