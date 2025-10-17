@@ -1,155 +1,125 @@
-# db_manager.py (VERSÃO FINAL E CORRIGIDA)
+# db_manager.py (VERSÃO FINAL 1.2 - CORREÇÃO DE COLUNAS)
 
 import sqlite3
 from datetime import datetime
 import pandas as pd
-import os # Necessário para criar a pasta 'data'
 
-# Nome do arquivo do banco de dados.
-DB_NAME = 'data/bet_data.db'
+DATABASE_NAME = 'bet_manager.db'
 
 def setup_database():
     """
-    Cria a pasta 'data/' e as tabelas do banco de dados se elas não existirem.
+    Cria o banco de dados e as tabelas (saldos e apostas) se elas não existirem.
+    Garante que a tabela 'apostas' tenha as colunas Status e Valor_Retorno.
     """
-    
-    # 1. GARANTE QUE A PASTA DATA EXISTA
-    if not os.path.exists('data'):
-        os.makedirs('data')
-        
-    conn = None # Inicializa conn para ser usado no 'finally'
-    try:
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        
-        # 1. Tabela de Saldo (Para histórico financeiro)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS saldo (
-                casa TEXT NOT NULL,
-                saldo REAL NOT NULL,
-                data_atualizacao TEXT NOT NULL,
-                PRIMARY KEY (casa, data_atualizacao)
-            );
-        """)
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
 
-        # 2. Tabela de Apostas (Sem chave estrangeira para evitar falha na criação)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS apostas (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                casa TEXT NOT NULL,
-                liga TEXT,
-                jogo TEXT,
-                mercado TEXT NOT NULL,
-                odd REAL NOT NULL,
-                valor REAL NOT NULL,
-                data_aposta TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'AGUARDANDO',
-                lucro REAL DEFAULT 0.00
-            );
-        """)
-        
-        # ESTE COMMIT É CRÍTICO!
-        conn.commit() 
-        print("Estrutura do banco de dados verificada/criada com sucesso.")
-        
-    except sqlite3.Error as e:
-        print(f"Erro ao configurar o banco de dados: {e}")
-    finally:
-        if conn:
-            conn.close()
+    # Tabela saldos
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS saldos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            casa TEXT NOT NULL,
+            saldo REAL NOT NULL,
+            data_atualizacao TEXT NOT NULL
+        )
+    """)
 
-# --- Funções de Saldo ---
+    # Tabela apostas (Importante: Garante as colunas Status e Valor_Retorno)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS apostas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            casa TEXT NOT NULL,
+            liga TEXT,
+            jogo TEXT NOT NULL,
+            mercado TEXT NOT NULL,
+            odd REAL NOT NULL,
+            valor_apostado REAL NOT NULL,
+            valor_retorno REAL DEFAULT 0.00,  
+            status TEXT DEFAULT 'AGUARDANDO', 
+            data_registro TEXT NOT NULL
+        )
+    """)
+
+    conn.commit()
+    conn.close()
 
 def update_saldo(casa: str, novo_saldo: float):
-    """Atualiza o saldo atual de uma casa de aposta."""
-    conn = sqlite3.connect(DB_NAME)
+    """Atualiza o saldo atual da casa de aposta."""
+    conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
-    data_hora = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    try:
-        cursor.execute("""
-            INSERT INTO saldo (casa, saldo, data_atualizacao) 
-            VALUES (?, ?, ?);
-        """, (casa, novo_saldo, data_hora))
-        
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        print(f"Erro ao atualizar saldo: {e}")
-        return False
-    finally:
-        conn.close()
-
-def get_latest_saldo(casa: str):
-    """Busca o saldo mais recente de uma casa de aposta."""
-    conn = sqlite3.connect(DB_NAME)
     
-    # Buscamos a entrada mais recente para a casa específica
+    # Remove a entrada anterior e insere a nova
+    cursor.execute("DELETE FROM saldos WHERE casa = ?", (casa,))
+    cursor.execute("INSERT INTO saldos (casa, saldo, data_atualizacao) VALUES (?, ?, ?)",
+                   (casa, novo_saldo, datetime.now().isoformat()))
+    
+    conn.commit()
+    conn.close()
+
+def get_latest_saldo(casa: str) -> float:
+    """Puxa o saldo mais recente de uma casa."""
+    conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT saldo FROM saldo 
-        WHERE casa = ? 
-        ORDER BY data_atualizacao DESC 
-        LIMIT 1;
-    """, (casa,))
     
+    # Seleciona o último saldo registrado para a casa
+    cursor.execute("SELECT saldo FROM saldos WHERE casa = ? ORDER BY data_atualizacao DESC LIMIT 1", (casa,))
     result = cursor.fetchone()
+    
+    conn.close()
+    return result[0] if result else 0.00
+
+def insert_aposta(casa: str, liga: str, jogo: str, mercado: str, odd: float, valor_apostado: float) -> int:
+    """Insere uma nova aposta no banco de dados."""
+    conn = sqlite3.connect(DATABASE_NAME)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        INSERT INTO apostas (casa, liga, jogo, mercado, odd, valor_apostado, data_registro) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (casa, liga, jogo, mercado, odd, valor_apostado, datetime.now().isoformat()))
+    
+    aposta_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return aposta_id
+
+def get_all_apostas() -> pd.DataFrame:
+    """Puxa todas as apostas e retorna como um DataFrame do Pandas."""
+    conn = sqlite3.connect(DATABASE_NAME)
+    
+    # O SQL puxa todas as colunas
+    df = pd.read_sql_query("SELECT id AS ID_Aposta, * FROM apostas ORDER BY data_registro DESC", conn)
+    
     conn.close()
     
-    # Retorna o saldo ou 0.0 se não houver registros
-    return result[0] if result else 0.0
-
-# --- Funções de Aposta ---
-
-def insert_aposta(casa: str, liga: str, jogo: str, mercado: str, odd: float, valor: float):
-    """Registra uma nova aposta no sistema."""
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    data_hora = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-
-    try:
-        cursor.execute("""
-            INSERT INTO apostas (casa, liga, jogo, mercado, odd, valor, data_aposta) 
-            VALUES (?, ?, ?, ?, ?, ?, ?);
-        """, (casa, liga, jogo, mercado, odd, valor, data_hora))
+    # Formatação de colunas
+    if not df.empty:
+        df['Data_Registro'] = pd.to_datetime(df['data_registro'])
+        df = df.rename(columns={
+            'valor_apostado': 'Valor_Apostado',
+            'valor_retorno': 'Valor_Retorno',
+            'status': 'Status',
+            'casa': 'Casa',
+            'liga': 'Liga',
+            'jogo': 'Jogo',
+            'mercado': 'Mercado',
+            'odd': 'Odd'
+        })
+        # Seleciona e reordena as colunas para exibição
+        df = df[['ID_Aposta', 'Casa', 'Liga', 'Jogo', 'Mercado', 'Odd', 'Valor_Apostado', 'Valor_Retorno', 'Status', 'Data_Registro']]
         
-        conn.commit()
-        return cursor.lastrowid # Retorna o ID da aposta criada
-    except sqlite3.Error as e:
-        print(f"Erro ao inserir aposta: {e}")
-        return None
-    finally:
-        conn.close()
-
-def get_all_apostas():
-    """Busca todas as apostas feitas (para o dashboard e a aba de apostas)."""
-    conn = sqlite3.connect(DB_NAME)
-    # Retorna os dados como um DataFrame do Pandas para facilitar a análise
-    try:
-        df = pd.read_sql_query("SELECT * FROM apostas ORDER BY data_aposta DESC;", conn)
-    except pd.io.sql.DatabaseError:
-        # Se a tabela não existir, retorna um DataFrame vazio para não quebrar o Streamlit
-        df = pd.DataFrame()
-        
-    conn.close()
     return df
 
-def update_aposta_resultado(aposta_id: int, status: str, lucro: float):
-    """Atualiza o resultado (GREEN/RED/CASHOUT) e o lucro de uma aposta."""
-    conn = sqlite3.connect(DB_NAME)
+def update_aposta_resultado(aposta_id: int, status: str, valor_retorno: float):
+    """Atualiza o status e o valor de retorno de uma aposta."""
+    conn = sqlite3.connect(DATABASE_NAME)
     cursor = conn.cursor()
     
-    try:
-        cursor.execute("""
-            UPDATE apostas 
-            SET status = ?, lucro = ? 
-            WHERE id = ?;
-        """, (status, lucro, aposta_id))
-        
-        conn.commit()
-        return True
-    except sqlite3.Error as e:
-        print(f"Erro ao atualizar resultado: {e}")
-        return False
-    finally:
-        conn.close()
+    cursor.execute("""
+        UPDATE apostas 
+        SET status = ?, valor_retorno = ?
+        WHERE id = ?
+    """, (status, valor_retorno, aposta_id))
+    
+    conn.commit()
+    conn.close()
