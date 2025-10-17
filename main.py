@@ -340,3 +340,58 @@ with tab_apostas:
             if st.button("✅ Atualizar Resultado e Saldo", use_container_width=True, key='btn_resolver') and aposta_selecionada is not None:
                 valor_apostado = aposta_selecionada['Valor_Apostado']
                 casa_aposta = aposta_selecionada['Casa']
+                
+                # Lógica para Lucro/Prejuízo:
+                if novo_status == 'RED':
+                    valor_retorno_final = 0.00
+                    lucro = -valor_apostado 
+                else:
+                    valor_retorno_final = valor_retorno
+                    lucro = valor_retorno - valor_apostado
+
+                # 1. Atualiza o status e o retorno no DB
+                update_aposta_resultado(id_selecionado, novo_status, valor_retorno_final)
+
+                # 2. Atualiza o saldo:
+                saldo_atual = st.session_state['saldos'].get(casa_aposta, 0.00)
+                novo_saldo_final = saldo_atual + valor_retorno_final 
+                
+                update_saldo(casa_aposta, novo_saldo_final)
+                
+                refresh_data() 
+                st.success(f"Aposta ID {id_selecionado} resolvida como {novo_status}! Lucro: R$ {lucro:.2f}.")
+
+
+    st.markdown("---")
+    st.subheader("Histórico de Apostas Registradas")
+    
+    # Tabela com histórico de apostas
+    if df_apostas.empty:
+        st.info("Nenhuma aposta registrada ainda.")
+    else:
+        st.dataframe(df_apostas, use_container_width=True)
+
+
+with tab_performance:
+    st.header("📊 Dashboard de Performance")
+    
+    df_apostas = st.session_state['apostas_data']
+    
+    if df_apostas.empty or 'Status' not in df_apostas.columns:
+        st.info("Registre algumas apostas resolvidas (GREEN/RED) para visualizar o desempenho.")
+    else:
+        # Calcular métricas de performance
+        total_apostas, total_stake, total_lucro, roi = calculate_performance_metrics(df_apostas)
+        
+        col_perf1, col_perf2, col_perf3, col_perf4 = st.columns(4)
+        col_perf1.metric("Total de Apostas", total_apostas)
+        col_perf2.metric("Total de Stake", f"R$ {total_stake:.2f}")
+        col_perf3.metric("Lucro Líquido", f"R$ {total_lucro:.2f}", delta_color="normal")
+        col_perf4.metric("ROI (Retorno)", f"{roi:.2f}%", delta_color="normal")
+        
+        st.markdown("---")
+        st.subheader("Evolução do Lucro ao Longo do Tempo")
+        
+        # Gerar o gráfico
+        fig = create_profit_chart(df_apostas)
+        st.plotly_chart(fig, use_container_width=True)
