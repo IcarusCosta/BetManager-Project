@@ -1,10 +1,10 @@
-# main.py (VERSÃO FINAL 1.4 - COM CORREÇÃO FINAL DE KEYERROR)
+# main.py (VERSÃO FINAL 1.5 - COM CORREÇÃO DA SELEÇÃO DE LINHA)
 
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 
-# Importamos os módulos
+# Importamos os módulos (certifique-se de que os outros arquivos estão atualizados também!)
 from bet_api import get_all_prematch_odds
 from db_manager import setup_database, get_latest_saldo, update_saldo, insert_aposta, get_all_apostas, update_aposta_resultado
 from data_processor import calculate_performance_metrics, create_profit_chart
@@ -149,31 +149,36 @@ with tab_jogos:
             # Formata a coluna de data para exibição
             df_final['Data_Hora'] = pd.to_datetime(df_final['Data_Hora']).dt.strftime('%d/%m %H:%M')
             
-            # Colunas exibidas (incluímos o ID_Evento para uso interno)
+            # Colunas exibidas
             df_display = df_final[['Casa', 'ID_Evento', 'Liga', 'Jogo', 'Data_Hora', 'Odd_1', 'Odd_X', 'Odd_2']].rename(columns={'ID_Evento': 'ID'})
             
             st.subheader(f"Selecione um evento para Aposta Rápida:")
             
-            # --- CAPTURA DA SELEÇÃO (Aposta Rápida) ---
-            selected_rows = st.data_editor(
+            # --- CORREÇÃO DA SELEÇÃO DE LINHA: USANDO st.dataframe ---
+            event = st.dataframe(
                 df_display, 
                 use_container_width=True, 
                 hide_index=True,
                 column_config={"ID": st.column_config.Column(disabled=True, width="small")},
-                num_rows="dynamic",
-                disabled=df_display.columns.tolist(),
-                key='tabela_odds'
+                selection_mode="single-row",
+                on_select="rerun", # Importante para reagir ao clique
+                key='tabela_odds_selecao' 
             )
+            
+            # 2. Verificar se uma linha foi selecionada
+            selected_indices = event.selection.get('rows', []) 
 
-            # Verifica se há alguma linha selecionada
-            if selected_rows.empty:
+            if not selected_indices:
                 st.info("Clique em uma linha da tabela acima para preencher o formulário de Aposta Rápida.")
             else:
                 st.markdown("---")
                 st.markdown("### ⚡ Aposta Rápida (Evento Selecionado)")
                 
-                row = selected_rows.iloc[0]
-
+                # Puxa o índice posicional da linha selecionada no df_final
+                selected_index_in_df_final = df_final.index[selected_indices[0]] 
+                row = df_final.loc[selected_index_in_df_final]
+                
+                # --- FORMULÁRIO DE APOSTA RÁPIDA ---
                 col_rapida1, col_rapida2, col_rapida3 = st.columns(3)
                 
                 with col_rapida1:
@@ -186,7 +191,7 @@ with tab_jogos:
                     
                 with col_rapida2:
                     st.text_input("Jogo", value=row['Jogo'], disabled=True, key='rap_jogo_disp')
-                    odd_selecionada = st.number_input("Odd", min_value=1.01, step=0.01, format="%.2f", value=row['Odd_1'], key='rap_odd')
+                    odd_selecionada = st.number_input("Odd", min_value=1.01, step=0.01, format="%.2f", value=row['Odd_1'], key='rap_odd') 
                     
                 with col_rapida3:
                     valor_rapido = st.number_input("Valor Apostado (R$)", min_value=0.01, step=5.00, format="%.2f", key='rap_valor')
@@ -261,14 +266,13 @@ with tab_apostas:
     st.markdown("---")
     st.subheader("🛠️ Resolver Aposta Pendente")
 
-    # --- CORREÇÃO DE SEGURANÇA CONTRA KEYERROR APLICADA AQUI ---
+    # Tratamento de segurança para df_apostas
     df_apostas = st.session_state.get('apostas_data', pd.DataFrame())
     
     if df_apostas.empty or 'Status' not in df_apostas.columns:
         df_pendentes = pd.DataFrame()
         st.info("Nenhuma aposta registrada. Registre uma aposta primeiro.")
     else:
-        # O filtro agora só é tentado se a coluna 'Status' existir
         df_pendentes = df_apostas[df_apostas['Status'] == 'AGUARDANDO']
         
         if df_pendentes.empty:
@@ -282,7 +286,6 @@ with tab_apostas:
             with col_res1:
                 id_selecionado = st.selectbox("Selecione o ID da Aposta", opcoes_id, key='res_id')
                 
-                # Puxa os detalhes da aposta selecionada (Garantia de que a linha existe)
                 aposta_selecionada_df = df_pendentes[df_pendentes['ID_Aposta'] == id_selecionado]
                 if not aposta_selecionada_df.empty:
                     aposta_selecionada = aposta_selecionada_df.iloc[0]
@@ -295,7 +298,6 @@ with tab_apostas:
                 novo_status = st.selectbox("Status Final", ['GREEN', 'RED', 'CASHOUT'], key='res_status')
                 
             with col_res3:
-                # Pede o valor que retornou (usado para Green ou Cashout)
                 default_return = aposta_selecionada['Valor_Apostado'] if aposta_selecionada is not None else 0.00
                 valor_retorno = st.number_input("Valor Recebido (R$)", min_value=0.00, value=default_return, step=1.00, format="%.2f", key='res_retorno')
 
