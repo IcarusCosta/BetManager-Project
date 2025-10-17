@@ -1,4 +1,4 @@
-# main.py (VERSÃO FINAL 1.5.2 - CÁLCULO AUTOMÁTICO DE RETORNO)
+# main.py (VERSÃO FINAL 1.6 - ADICIONANDO PROGNÓSTICO/SELEÇÃO)
 
 import streamlit as st
 import pandas as pd
@@ -13,7 +13,7 @@ from automation_job import run_result_automation
 # --- Configuração Inicial ---
 st.set_page_config(layout="wide", page_title="Bet Manager | Projeto Ícaro & Gemini")
 
-# Configura o banco de dados (cria o arquivo e as tabelas).
+# Configura o banco de dados (cria o arquivo e as tabelas, incluindo a nova coluna Prognostico).
 setup_database()
 
 # Função para carregar os saldos
@@ -154,18 +154,17 @@ with tab_jogos:
             
             st.subheader(f"Selecione um evento para Aposta Rápida:")
             
-            # --- CORREÇÃO DA SELEÇÃO DE LINHA: USANDO st.dataframe ---
+            # --- CAPTURA DA SELEÇÃO: st.dataframe ---
             event = st.dataframe(
                 df_display, 
                 use_container_width=True, 
                 hide_index=True,
                 column_config={"ID": st.column_config.Column(disabled=True, width="small")},
                 selection_mode="single-row",
-                on_select="rerun", # Importante para reagir ao clique
+                on_select="rerun", 
                 key='tabela_odds_selecao' 
             )
             
-            # 2. Verificar se uma linha foi selecionada
             selected_indices = event.selection.get('rows', []) 
 
             if not selected_indices:
@@ -174,7 +173,6 @@ with tab_jogos:
                 st.markdown("---")
                 st.markdown("### ⚡ Aposta Rápida (Evento Selecionado)")
                 
-                # Puxa o índice posicional da linha selecionada no df_final
                 selected_index_in_df_final = df_final.index[selected_indices[0]] 
                 row = df_final.loc[selected_index_in_df_final]
                 
@@ -196,17 +194,21 @@ with tab_jogos:
                 with col_rapida3:
                     valor_rapido = st.number_input("Valor Apostado (R$)", min_value=0.01, step=5.00, format="%.2f", key='rap_valor')
                     
+                # NOVO CAMPO: PROGNÓSTICO
+                rap_prognostico = st.text_input("Prognóstico/Seleção (Ex: Time A, 1, Over 2.5)", key='rap_prognostico')
+
                 saldo_disp = st.session_state['saldos'].get(row['Casa'], 0.00)
                 st.caption(f"Saldo Disponível em {row['Casa']}: R$ {saldo_disp:.2f}")
 
                 if st.button(f"✅ Registrar Aposta de R$ {valor_rapido:.2f}", key='btn_rapida'):
-                    if valor_rapido > 0 and valor_rapido <= saldo_disp:
+                    if valor_rapido > 0 and valor_rapido <= saldo_disp and rap_prognostico:
                         
                         aposta_id = insert_aposta(
                             row['Casa'], 
                             row['Liga'], 
                             row['Jogo'], 
-                            st.session_state['rap_mercado'], 
+                            st.session_state['rap_mercado'],
+                            rap_prognostico,  # <-- Passando o novo campo
                             st.session_state['rap_odd'], 
                             valor_rapido
                         )
@@ -217,7 +219,7 @@ with tab_jogos:
                             refresh_data()
                             st.success(f"Aposta ID {aposta_id} registrada para {row['Jogo']}!")
                     else:
-                        st.error("Valor inválido! Verifique o saldo e o valor.")
+                        st.error("Preencha o Prognóstico e verifique o saldo/valor.")
 
 
 with tab_apostas:
@@ -232,6 +234,10 @@ with tab_apostas:
             ['Vencedor da Partida (1X2)', 'Acima de 2.5 Gols', 'Ambas Marcam', 'Handicap Asiático', 'Outro'], 
             key='reg_mercado'
         )
+        
+        # NOVO CAMPO NO REGISTRO MANUAL
+        reg_prognostico = st.text_input("Prognóstico/Seleção (Ex: Time A, X, Under 1.5)", key='reg_prognostico')
+
 
     with col_reg2:
         reg_liga = st.text_input("Liga/Campeonato", key='reg_liga')
@@ -245,9 +251,17 @@ with tab_apostas:
     st.markdown(f"**Saldo Disponível em {reg_casa}: R$ {saldo_disp:.2f}**")
     
     if st.button("✅ Registrar Aposta e Deduzir Saldo", use_container_width=True, key='btn_manual'):
-        if reg_valor > 0 and reg_valor <= saldo_disp:
+        if reg_valor > 0 and reg_valor <= saldo_disp and reg_prognostico:
             
-            aposta_id = insert_aposta(reg_casa, reg_liga, reg_jogo, reg_mercado, reg_odd, reg_valor)
+            aposta_id = insert_aposta(
+                reg_casa, 
+                reg_liga, 
+                reg_jogo, 
+                reg_mercado, 
+                reg_prognostico, # <-- Passando o novo campo
+                reg_odd, 
+                reg_valor
+            )
             
             if aposta_id:
                 # 1. Deduz o valor do saldo e salva o novo saldo no DB
@@ -261,7 +275,7 @@ with tab_apostas:
             else:
                 st.error("Falha ao registrar a aposta no banco de dados.")
         else:
-            st.error("Valor inválido! Certifique-se de que o valor é maior que zero e menor ou igual ao saldo disponível.")
+            st.error("Valor inválido! Preencha o Prognóstico e verifique o saldo/valor.")
 
     st.markdown("---")
     st.subheader("🛠️ Resolver Aposta Pendente")
@@ -304,18 +318,14 @@ with tab_apostas:
                 odd = aposta_selecionada['Odd']
 
                 if st.session_state['res_status'] == 'GREEN':
-                    # Padrão para GREEN é o retorno total esperado (Stake * Odd)
                     default_return_value = stake * odd
                 elif st.session_state['res_status'] == 'RED':
-                    # Padrão para RED é 0 de retorno
                     default_return_value = 0.00
                 else: 
-                    # Padrão para CASHOUT é a Stake (ponto de equilíbrio), mas deve ser editado pelo usuário
                     default_return_value = stake 
             # --- FIM DA LÓGICA DE PRÉ-PREENCHIMENTO ---
 
             with col_res3:
-                # O campo usa o valor pré-preenchido, mas permite edição.
                 valor_retorno = st.number_input(
                     "Valor TOTAL Recebido (R$, Incluindo Stake)", 
                     min_value=0.00, 
@@ -331,19 +341,16 @@ with tab_apostas:
                 
                 # Lógica para Lucro/Prejuízo:
                 if novo_status == 'RED':
-                    # Força o retorno a 0.00 e o lucro a -Stake para o status RED
                     valor_retorno_final = 0.00
                     lucro = -valor_apostado 
                 else:
-                    # GREEN ou CASHOUT. Usa o valor do campo (pré-preenchido ou editado)
                     valor_retorno_final = valor_retorno
-                    # Lucro = Retorno Total - Stake
                     lucro = valor_retorno - valor_apostado
 
                 # 1. Atualiza o status e o retorno no DB
                 update_aposta_resultado(id_selecionado, novo_status, valor_retorno_final)
 
-                # 2. Atualiza o saldo: adicionamos APENAS o que retornou (o apostado já foi subtraído)
+                # 2. Atualiza o saldo:
                 saldo_atual = st.session_state['saldos'].get(casa_aposta, 0.00)
                 novo_saldo_final = saldo_atual + valor_retorno_final 
                 
